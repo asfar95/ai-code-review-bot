@@ -23,7 +23,7 @@ An AI-powered GitHub bot that automatically reviews pull requests, posts inline 
 <img src="screenshots/dashboard-reviews.png" alt="Reviews list showing per-PR severity breakdown and category tags" width="800">
 
 ### PR detail — per-file comments with category tags
-<img src="screenshots/review-detail.png" alt="Drill-down view showing all AI comments for a single PR grouped by file with severity and category badges" width="800">
+<img src="screenshots/review-details.png" alt="Drill-down view showing all AI comments for a single PR grouped by file with severity and category badges" width="800">
 
 ---
 
