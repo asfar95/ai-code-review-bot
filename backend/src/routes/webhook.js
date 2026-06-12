@@ -38,6 +38,7 @@ router.post('/', async (req, res) => {
   const repoFullName = repository.full_name;
   const prNumber = pull_request.number;
   const prTitle = pull_request.title;
+  const prDescription = pull_request.body || '';
   const prAuthor = pull_request.user.login;
   const prUrl = pull_request.html_url;
 
@@ -75,7 +76,7 @@ router.post('/', async (req, res) => {
     }
 
     // Run AI review
-    const prContext = { repo: repoFullName, title: prTitle, prNumber };
+    const prContext = { repo: repoFullName, title: prTitle, description: prDescription, prNumber };
     const { comments, filesReviewed, critical, warnings, suggestions } = await reviewPR(files, prContext);
 
     // Save comments to DB

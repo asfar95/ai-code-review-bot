@@ -5,6 +5,7 @@ const SUPPORTED_EXTENSIONS = new Set([
 ]);
 
 const MAX_DIFF_CHARS = 12000;
+const MAX_TOKENS = 2048;
 
 // ── Provider config ────────────────────────────────────────────────────────────
 const AI_PROVIDER = process.env.AI_PROVIDER || 'anthropic';
@@ -20,7 +21,6 @@ function defaultModel(provider) {
   }
 }
 
-// Base URLs for OpenAI-compatible providers
 const BASE_URLS = {
   groq:   'https://api.groq.com/openai/v1',
   openai: 'https://api.openai.com/v1',
@@ -32,7 +32,6 @@ function createClient() {
     const Anthropic = require('@anthropic-ai/sdk');
     return new Anthropic({ apiKey: AI_API_KEY });
   }
-
   const OpenAI = require('openai');
   return new OpenAI({
     apiKey: AI_API_KEY,
@@ -40,25 +39,75 @@ function createClient() {
   });
 }
 
-// ── Unified send ───────────────────────────────────────────────────────────────
-async function sendMessage(prompt) {
+// ── Unified send (system + user split) ────────────────────────────────────────
+async function sendMessage(systemPrompt, userPrompt) {
   const client = createClient();
 
   if (AI_PROVIDER === 'anthropic') {
     const res = await client.messages.create({
       model: AI_MODEL,
-      max_tokens: 1024,
-      messages: [{ role: 'user', content: prompt }],
+      max_tokens: MAX_TOKENS,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }],
     });
     return res.content[0].text;
   }
 
   const res = await client.chat.completions.create({
     model: AI_MODEL,
-    max_tokens: 1024,
-    messages: [{ role: 'user', content: prompt }],
+    max_tokens: MAX_TOKENS,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ],
   });
   return res.choices[0].message.content;
+}
+
+// ── Prompt builders ────────────────────────────────────────────────────────────
+function buildSystemPrompt() {
+  return `You are a senior software engineer performing thorough, production-quality code reviews.
+Your job is to catch real problems: security vulnerabilities, bugs, data loss risks, and performance issues.
+Be precise, actionable, and direct. Do not praise or summarize — only flag problems.
+Always return ONLY a valid JSON array. No markdown, no explanation, no text outside the array.`;
+}
+
+function buildUserPrompt(filename, patch, prContext) {
+  const descriptionBlock = prContext.description
+    ? `PR Description:\n${prContext.description.slice(0, 500)}\n`
+    : '';
+
+  return `PR Context:
+- Repository: ${prContext.repo}
+- PR Title: ${prContext.title}
+${descriptionBlock}
+File: ${filename}
+
+Git Diff:
+\`\`\`
+${truncateDiff(patch)}
+\`\`\`
+
+Review the changed lines (lines starting with +) and return a JSON array of issues found.
+Each item must have exactly these fields:
+{
+  "file_path": "${filename}",
+  "line_number": <integer from the diff, or null>,
+  "severity": <"critical" | "warning" | "suggestion">,
+  "category": <"security" | "performance" | "bug" | "style" | "maintainability" | "best-practice">,
+  "comment": <actionable explanation of the issue and how to fix it, max 300 chars>
+}
+
+Severity guide:
+- "critical": security vulnerabilities, data loss, broken logic, exposed secrets
+- "warning": missing error handling, deprecated patterns, performance problems
+- "suggestion": style, naming, refactoring opportunities
+
+Rules:
+- Max 8 comments per file
+- Only flag CHANGED lines (starting with + in the diff)
+- Skip trivial whitespace or formatting changes
+- Return [] if no real issues found`;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -72,40 +121,31 @@ function truncateDiff(diff, maxChars = MAX_DIFF_CHARS) {
   return diff.substring(0, maxChars) + '\n... [diff truncated for length]';
 }
 
-function buildReviewPrompt(filename, patch, prContext) {
-  return `You are a senior software engineer performing a thorough code review. Be precise and actionable.
+function extractJSON(text) {
+  // Try direct parse first
+  try {
+    return JSON.parse(text.trim());
+  } catch {}
 
-PR Context:
-- Repository: ${prContext.repo}
-- PR Title: ${prContext.title}
-- File: ${filename}
+  // Strip markdown fences
+  const stripped = text
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/```\s*$/i, '')
+    .trim();
+  try {
+    return JSON.parse(stripped);
+  } catch {}
 
-Git Diff:
-\`\`\`
-${truncateDiff(patch)}
-\`\`\`
+  // Find first [ ... ] block in the response as a last resort
+  const match = stripped.match(/\[[\s\S]*\]/);
+  if (match) {
+    try {
+      return JSON.parse(match[0]);
+    } catch {}
+  }
 
-Review this diff and return ONLY a valid JSON array (no markdown, no explanation, just the array).
-Each item must have exactly these fields:
-{
-  "file_path": "${filename}",
-  "line_number": <integer line number from the diff, or null if not applicable>,
-  "severity": <"critical" | "warning" | "suggestion">,
-  "category": <"security" | "performance" | "bug" | "style" | "maintainability" | "best-practice">,
-  "comment": <concise actionable comment, max 150 chars>
-}
-
-Guidelines:
-- "critical": bugs, security vulnerabilities, data loss risks, broken logic
-- "warning": performance issues, deprecated patterns, missing error handling
-- "suggestion": style improvements, naming, refactoring opportunities
-
-Rules:
-- Max 8 comments per file
-- Only comment on the CHANGED lines (lines starting with + in the diff)
-- Skip trivial whitespace or formatting changes
-- If no issues found, return an empty array: []
-- Return ONLY the JSON array, nothing else`;
+  return null;
 }
 
 // ── Core review logic ──────────────────────────────────────────────────────────
@@ -113,22 +153,25 @@ async function reviewFile(filename, patch, prContext) {
   if (!patch || patch.trim() === '') return [];
   if (!shouldReviewFile(filename)) {
     console.log(`  ⏭️  Skipping ${filename} (unsupported file type)`);
-    return [];
+    return null; // null = skipped, [] = reviewed with no issues
   }
 
   try {
     console.log(`  🔍 Reviewing ${filename}...`);
-    const responseText = await sendMessage(buildReviewPrompt(filename, patch, prContext));
+    const responseText = await sendMessage(
+      buildSystemPrompt(),
+      buildUserPrompt(filename, patch, prContext)
+    );
 
-    const cleaned = responseText
-      .replace(/^```json\s*/i, '')
-      .replace(/^```\s*/i, '')
-      .replace(/```\s*$/i, '')
-      .trim();
+    const comments = extractJSON(responseText);
 
-    const comments = JSON.parse(cleaned);
+    if (!Array.isArray(comments)) {
+      console.warn(`    ⚠️  Could not parse response for ${filename} — skipping`);
+      return [];
+    }
+
     console.log(`    ✅ ${comments.length} comments for ${filename}`);
-    return Array.isArray(comments) ? comments : [];
+    return comments;
   } catch (err) {
     console.error(`    ❌ Error reviewing ${filename}:`, err.message);
     return [];
@@ -146,8 +189,10 @@ async function reviewPR(files, prContext) {
     if (file.status === 'removed') continue;
 
     const comments = await reviewFile(file.filename, file.patch, prContext);
+
+    if (comments === null) continue; // skipped file type — don't count it
     allComments.push(...comments);
-    if (comments !== null) filesReviewed++;
+    filesReviewed++;
 
     await new Promise((r) => setTimeout(r, 500));
   }
