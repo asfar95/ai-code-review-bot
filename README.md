@@ -151,9 +151,49 @@ ai-code-review-bot/
 │   │   │   └── useApi.js             # API data fetching hooks
 │   │   └── App.js                    # Router + sidebar layout
 │   └── package.json
+├── mcp/
+│   ├── src/
+│   │   └── index.js                  # MCP server (review_pr, review_code, get_history, get_stats)
+│   └── package.json
 ├── docker-compose.yml
 └── README.md
 ```
+
+---
+
+## 🔌 MCP Server (Claude Code Integration)
+
+The `mcp/` package exposes the bot as an MCP tool so you can trigger reviews directly inside Claude Code.
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `review_pr` | Review a GitHub PR by owner/repo/number |
+| `review_code` | Review a raw code snippet |
+| `get_review_history` | List past reviews from the local DB |
+| `get_review_stats` | Aggregate stats — totals, severity breakdown, 7-day activity |
+
+### Setup
+
+```bash
+cd mcp && npm install
+```
+
+Add to your Claude Code config (`~/.claude/settings.json` or project `.claude/settings.json`):
+
+```json
+{
+  "mcpServers": {
+    "ai-code-review": {
+      "command": "node",
+      "args": ["/absolute/path/to/ai-code-review-bot/mcp/src/index.js"]
+    }
+  }
+}
+```
+
+Restart Claude Code — the tools will appear automatically.
 
 ---
 
