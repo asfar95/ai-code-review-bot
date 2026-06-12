@@ -13,17 +13,17 @@ An AI-powered GitHub bot that automatically reviews pull requests, posts inline 
 
 ## 📸 Screenshots
 
-<p align="left">
-  <img width="823" height="1142" alt="Screenshot 2026-06-11 183312" src="https://github.com/user-attachments/assets/a54801f4-9249-48f6-a34a-3ebe41cff372" />
-  <br/><em>Inline severity-ranked comments posted automatically on every PR</em>
-</p>
+### Inline PR comments — severity-ranked, posted automatically
+<img src="screenshots/pr-inline-comments.png" alt="Bot posting severity-ranked inline comments directly on changed lines in a GitHub pull request" width="800">
 
-<p align="left">
-  <img width="2430" height="1355" alt="Screenshot 2026-06-11 183114" src="https://github.com/user-attachments/assets/cba13352-026f-47c0-bb97-a9765077e41f" />
-  <img width="2376" height="1351" alt="Screenshot 2026-06-11 183042" src="https://github.com/user-attachments/assets/270d6f6e-ee39-45da-b445-206c5c71b7fc" />
-  <img width="2380" height="1355" alt="Screenshot 2026-06-11 182959" src="https://github.com/user-attachments/assets/166ab14f-a964-4901-a303-00c148015c60" />
-  <br/><em>React dashboard — filter by severity, drill into per-file comments</em>
-</p>
+### Dashboard — review history and severity breakdown
+<img src="screenshots/dashboard-overview.png" alt="React dashboard showing all PR reviews with severity filter and 7-day activity chart" width="800">
+
+### Dashboard — reviews list with severity badges
+<img src="screenshots/dashboard-reviews.png" alt="Reviews list showing per-PR severity breakdown and category tags" width="800">
+
+### PR detail — per-file comments with category tags
+<img src="screenshots/review-detail.png" alt="Drill-down view showing all AI comments for a single PR grouped by file with severity and category badges" width="800">
 
 ---
 
