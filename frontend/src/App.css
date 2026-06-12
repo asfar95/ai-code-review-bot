@@ -1,0 +1,169 @@
+.app {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ── Sidebar ── */
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 20px 0;
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+}
+
+.sidebar-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 20px 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.logo-icon { font-size: 28px; }
+.logo-title { font-size: 14px; font-weight: 700; color: var(--text); }
+.logo-sub { font-size: 11px; color: var(--text-muted); }
+
+.sidebar-nav {
+  flex: 1;
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.15s;
+  text-decoration: none;
+}
+
+.nav-item:hover { background: var(--surface2); color: var(--text); text-decoration: none; }
+.nav-item.active { background: var(--accent-glow); color: var(--accent); }
+.nav-icon { font-size: 16px; }
+
+.sidebar-footer {
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+}
+
+.footer-link {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.footer-link:hover { color: var(--accent); }
+
+/* ── Main content ── */
+.main-content {
+  margin-left: 220px;
+  flex: 1;
+  padding: 32px;
+  min-height: 100vh;
+}
+
+/* ── Shared page components ── */
+.page-header {
+  margin-bottom: 28px;
+}
+
+.page-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.page-sub {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+/* ── Cards ── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+}
+
+/* ── Stat chips ── */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+}
+
+.stat-label { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; font-weight: 500; letter-spacing: 0.3px; }
+.stat-value { font-size: 28px; font-weight: 700; color: var(--text); line-height: 1; }
+.stat-value.critical { color: var(--critical); }
+.stat-value.warning { color: var(--warning); }
+.stat-value.suggestion { color: var(--suggestion); }
+
+/* ── Severity badges ── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge.critical { background: var(--critical-bg); color: var(--critical); }
+.badge.warning { background: var(--warning-bg); color: var(--warning); }
+.badge.suggestion { background: var(--suggestion-bg); color: var(--suggestion); }
+.badge.reviewing { background: rgba(88,166,255,0.1); color: var(--accent); }
+.badge.reviewed { background: rgba(63,185,80,0.1); color: var(--suggestion); }
+.badge.pending { background: rgba(139,148,158,0.1); color: var(--text-muted); }
+
+/* ── Loading / Empty ── */
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 60px;
+  color: var(--text-muted);
+  font-size: 14px;
+  gap: 10px;
+}
+
+.spinner {
+  width: 18px; height: 18px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-muted);
+}
+
+.empty-state .empty-icon { font-size: 40px; margin-bottom: 12px; }
+.empty-state p { font-size: 14px; }
