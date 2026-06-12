@@ -7,47 +7,46 @@ const SUPPORTED_EXTENSIONS = new Set([
 const MAX_DIFF_CHARS = 12000;
 const MAX_TOKENS = 2048;
 
-// ── Provider config ────────────────────────────────────────────────────────────
-const AI_PROVIDER = process.env.AI_PROVIDER || 'anthropic';
-const AI_MODEL = process.env.AI_MODEL || defaultModel(AI_PROVIDER);
+// ── Provider registry — add any OpenAI-compatible provider here ────────────────
+const PROVIDERS = {
+  anthropic:  { baseURL: null,                                                        model: 'claude-haiku-4-5-20251001' },
+  openai:     { baseURL: 'https://api.openai.com/v1',                                 model: 'gpt-4o-mini' },
+  groq:       { baseURL: 'https://api.groq.com/openai/v1',                            model: 'llama-3.3-70b-versatile' },
+  gemini:     { baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',   model: 'gemini-2.0-flash' },
+  openrouter: { baseURL: 'https://openrouter.ai/api/v1',                               model: 'meta-llama/llama-3.3-70b-instruct:free' },
+  together:   { baseURL: 'https://api.together.xyz/v1',                                model: 'meta-llama/Llama-3-70b-chat-hf' },
+  mistral:    { baseURL: 'https://api.mistral.ai/v1',                                  model: 'mistral-small-latest' },
+  ollama:     { baseURL: 'http://localhost:11434/v1',                                   model: 'llama3.2' },
+};
+
+const AI_PROVIDER = process.env.AI_PROVIDER || 'groq';
+const _provider = PROVIDERS[AI_PROVIDER] || PROVIDERS.groq;
+const AI_BASE_URL = process.env.AI_BASE_URL || _provider.baseURL;
+const AI_MODEL = process.env.AI_MODEL || _provider.model;
 const AI_API_KEY = process.env.AI_API_KEY || process.env.ANTHROPIC_API_KEY;
 
 // Max total chars per review group — tune this based on your provider's context window.
 // Lower = more isolated reviews; higher = more cross-file context per call.
 const BUNDLE_THRESHOLD = parseInt(process.env.REVIEW_BUNDLE_THRESHOLD || '10000', 10);
 
-function defaultModel(provider) {
-  switch (provider) {
-    case 'groq':      return 'llama-3.3-70b-versatile';
-    case 'openai':    return 'gpt-4o-mini';
-    case 'anthropic':
-    default:          return 'claude-haiku-4-5-20251001';
-  }
-}
-
-const BASE_URLS = {
-  groq:   'https://api.groq.com/openai/v1',
-  openai: 'https://api.openai.com/v1',
-};
-
 // ── Client factory ─────────────────────────────────────────────────────────────
+// Anthropic has its own SDK and message format; everything else is OpenAI-compatible.
+const USE_ANTHROPIC_SDK = AI_PROVIDER === 'anthropic' && !process.env.AI_BASE_URL;
+
 function createClient() {
-  if (AI_PROVIDER === 'anthropic') {
+  if (USE_ANTHROPIC_SDK) {
     const Anthropic = require('@anthropic-ai/sdk');
     return new Anthropic({ apiKey: AI_API_KEY });
   }
   const OpenAI = require('openai');
-  return new OpenAI({
-    apiKey: AI_API_KEY,
-    baseURL: process.env.AI_BASE_URL || BASE_URLS[AI_PROVIDER] || BASE_URLS.openai,
-  });
+  return new OpenAI({ apiKey: AI_API_KEY, baseURL: AI_BASE_URL });
 }
 
 // ── Unified send ───────────────────────────────────────────────────────────────
 async function sendMessage(systemPrompt, userPrompt) {
   const client = createClient();
 
-  if (AI_PROVIDER === 'anthropic') {
+  if (USE_ANTHROPIC_SDK) {
     const res = await client.messages.create({
       model: AI_MODEL,
       max_tokens: MAX_TOKENS,

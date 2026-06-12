@@ -7,7 +7,7 @@
 
 > Automated pull request reviews powered by **AI** + **GitHub Webhooks**
 
-An AI-powered GitHub bot that automatically reviews pull requests, posts inline comments with severity-ranked feedback, and surfaces review history through a React dashboard. Supports Groq, OpenAI, and Anthropic out of the box.
+An AI-powered GitHub bot that automatically reviews pull requests, posts inline comments with severity-ranked feedback, and surfaces review history through a React dashboard. Works with any OpenAI-compatible provider — Groq, Gemini, OpenAI, Anthropic, OpenRouter, Together AI, Mistral, or local Ollama.
 
 ---
 
@@ -31,7 +31,7 @@ An AI-powered GitHub bot that automatically reviews pull requests, posts inline 
 
 - **Automatic PR Reviews** — triggers on every PR open or push via GitHub Webhook
 - **Cross-File Analysis** — groups related files into a single AI call so the model can catch bugs that span multiple files
-- **Multi-Provider AI** — works with Groq (free), OpenAI, Anthropic, or any OpenAI-compatible API
+- **Multi-Provider AI** — works with Groq, Gemini, OpenAI, Anthropic, OpenRouter, Together AI, Mistral, Ollama — switch by changing `.env`, zero code changes
 - **Inline GitHub Comments** — posts comments directly on the changed lines in the PR
 - **Severity Ranking** — 🔴 Critical / 🟡 Warning / 💡 Suggestion
 - **Category Tagging** — Security, Performance, Bug, Style, Maintainability, Best Practice
@@ -52,7 +52,7 @@ An AI-powered GitHub bot that automatically reviews pull requests, posts inline 
 │    pushed)      │                  │                               │
 └─────────────────┘                  │  ┌────────────────────────┐  │
                                      │  │  AI Provider           │  │
-┌─────────────────┐  REST API        │  │  Groq/OpenAI/Anthropic │  │
+┌─────────────────┐  REST API        │  │  Groq/Gemini/OpenAI/…  │  │
 │  React Dashboard│ ◀─────────────   │  │  (cross-file review)   │  │
 │  (port 3000)    │                  │  └────────────────────────┘  │
 └─────────────────┘                  │                               │
@@ -91,9 +91,11 @@ Edit `.env`:
 GITHUB_TOKEN=ghp_your_token_here          # GitHub Personal Access Token (repo scope)
 GITHUB_WEBHOOK_SECRET=your_secret_here    # Any random string — must match GitHub webhook config
 
-AI_PROVIDER=groq                          # groq | openai | anthropic
+# AI — pick a provider (groq | gemini | openai | anthropic | openrouter | together | mistral | ollama)
+AI_PROVIDER=groq
 AI_MODEL=llama-3.3-70b-versatile          # model name for the chosen provider
 AI_API_KEY=your_api_key_here              # API key for the chosen provider
+# AI_BASE_URL=                            # optional: override base URL for custom endpoints
 
 REVIEW_BUNDLE_THRESHOLD=10000             # chars per review group (tune for your provider's context window)
 ```
@@ -231,11 +233,16 @@ ai-code-review-bot/
 
 ### AI Provider API Key
 
-| Provider | Free Tier | Get Key |
-|----------|-----------|---------|
-| Groq | ✅ Yes | console.groq.com |
-| OpenAI | ❌ No | platform.openai.com |
-| Anthropic | Limited | console.anthropic.com |
+| Provider | `AI_PROVIDER` | Free Tier | Get Key |
+|----------|---------------|-----------|---------|
+| Groq | `groq` | ✅ 100k tokens/day | console.groq.com |
+| Gemini | `gemini` | ✅ 1M tokens/day | aistudio.google.com |
+| OpenRouter | `openrouter` | ✅ Free models available | openrouter.ai |
+| Together AI | `together` | ✅ Free credits | api.together.xyz |
+| OpenAI | `openai` | ❌ Paid | platform.openai.com |
+| Anthropic | `anthropic` | ❌ Paid | console.anthropic.com |
+| Mistral | `mistral` | ❌ Paid | console.mistral.ai |
+| Ollama | `ollama` | ✅ Local/free | ollama.com |
 
 ---
 
@@ -244,7 +251,7 @@ ai-code-review-bot/
 | Layer | Technology |
 |-------|-----------|
 | Backend | Node.js, Express |
-| AI | Groq / OpenAI / Anthropic (configurable) |
+| AI | Groq / Gemini / OpenAI / Anthropic / OpenRouter / Ollama (configurable) |
 | GitHub | Octokit REST, Webhooks |
 | Database | SQLite (better-sqlite3) |
 | Frontend | React 18, React Router |
