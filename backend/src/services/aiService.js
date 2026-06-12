@@ -12,6 +12,10 @@ const AI_PROVIDER = process.env.AI_PROVIDER || 'anthropic';
 const AI_MODEL = process.env.AI_MODEL || defaultModel(AI_PROVIDER);
 const AI_API_KEY = process.env.AI_API_KEY || process.env.ANTHROPIC_API_KEY;
 
+// Max total chars per review group — tune this based on your provider's context window.
+// Lower = more isolated reviews; higher = more cross-file context per call.
+const BUNDLE_THRESHOLD = parseInt(process.env.REVIEW_BUNDLE_THRESHOLD || '10000', 10);
+
 function defaultModel(provider) {
   switch (provider) {
     case 'groq':      return 'llama-3.3-70b-versatile';
@@ -39,7 +43,7 @@ function createClient() {
   });
 }
 
-// ── Unified send (system + user split) ────────────────────────────────────────
+// ── Unified send ───────────────────────────────────────────────────────────────
 async function sendMessage(systemPrompt, userPrompt) {
   const client = createClient();
 
@@ -72,26 +76,29 @@ Be precise, actionable, and direct. Do not praise or summarize — only flag pro
 Always return ONLY a valid JSON array. No markdown, no explanation, no text outside the array.`;
 }
 
-function buildUserPrompt(filename, patch, prContext) {
+function buildUserPrompt(files, prContext) {
   const descriptionBlock = prContext.description
     ? `PR Description:\n${prContext.description.slice(0, 500)}\n`
     : '';
+
+  const fileBlocks = files
+    .map(f => `### ${f.filename}\n\`\`\`diff\n${truncateDiff(f.patch)}\n\`\`\``)
+    .join('\n\n');
+
+  const fileList = files.map(f => `"${f.filename}"`).join(', ');
 
   return `PR Context:
 - Repository: ${prContext.repo}
 - PR Title: ${prContext.title}
 ${descriptionBlock}
-File: ${filename}
+You are reviewing ${files.length} file${files.length > 1 ? 's' : ''} changed in this PR.
 
-Git Diff:
-\`\`\`
-${truncateDiff(patch)}
-\`\`\`
+${fileBlocks}
 
-Review the changed lines (lines starting with +) and return a JSON array of issues found.
+Review ALL changed lines (starting with +) across the files above and return a single JSON array of issues.
 Each item must have exactly these fields:
 {
-  "file_path": "${filename}",
+  "file_path": <one of: ${fileList}>,
   "line_number": <integer from the diff, or null>,
   "severity": <"critical" | "warning" | "suggestion">,
   "category": <"security" | "performance" | "bug" | "style" | "maintainability" | "best-practice">,
@@ -104,8 +111,9 @@ Severity guide:
 - "suggestion": style, naming, refactoring opportunities
 
 Rules:
-- Max 8 comments per file
+- Max 8 comments per file, 20 total
 - Only flag CHANGED lines (starting with + in the diff)
+- You may reference other files in the group when an issue spans multiple files
 - Skip trivial whitespace or formatting changes
 - Return [] if no real issues found`;
 }
@@ -117,84 +125,94 @@ function shouldReviewFile(filename) {
 }
 
 function truncateDiff(diff, maxChars = MAX_DIFF_CHARS) {
+  if (!diff) return '';
   if (diff.length <= maxChars) return diff;
   return diff.substring(0, maxChars) + '\n... [diff truncated for length]';
 }
 
 function extractJSON(text) {
-  // Try direct parse first
-  try {
-    return JSON.parse(text.trim());
-  } catch {}
+  try { return JSON.parse(text.trim()); } catch {}
 
-  // Strip markdown fences
   const stripped = text
-    .replace(/^```json\s*/i, '')
-    .replace(/^```\s*/i, '')
-    .replace(/```\s*$/i, '')
-    .trim();
-  try {
-    return JSON.parse(stripped);
-  } catch {}
+    .replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+  try { return JSON.parse(stripped); } catch {}
 
-  // Find first [ ... ] block in the response as a last resort
   const match = stripped.match(/\[[\s\S]*\]/);
-  if (match) {
-    try {
-      return JSON.parse(match[0]);
-    } catch {}
-  }
+  if (match) { try { return JSON.parse(match[0]); } catch {} }
 
   return null;
 }
 
-// ── Core review logic ──────────────────────────────────────────────────────────
-async function reviewFile(filename, patch, prContext) {
-  if (!patch || patch.trim() === '') return [];
-  if (!shouldReviewFile(filename)) {
-    console.log(`  ⏭️  Skipping ${filename} (unsupported file type)`);
-    return null; // null = skipped, [] = reviewed with no issues
+// ── Grouping ───────────────────────────────────────────────────────────────────
+// Greedy bin-packing: fill a group until it hits BUNDLE_THRESHOLD, then start a new one.
+// Files in the same group are reviewed together — the model sees all of them at once.
+function groupFiles(files) {
+  const groups = [];
+  let current = [];
+  let currentSize = 0;
+
+  for (const file of files) {
+    const size = (file.patch || '').length;
+
+    if (current.length > 0 && currentSize + size > BUNDLE_THRESHOLD) {
+      groups.push(current);
+      current = [file];
+      currentSize = size;
+    } else {
+      current.push(file);
+      currentSize += size;
+    }
   }
 
+  if (current.length > 0) groups.push(current);
+  return groups;
+}
+
+// ── Core review logic ──────────────────────────────────────────────────────────
+async function reviewGroup(files, prContext) {
+  const fileNames = files.map(f => f.filename).join(', ');
+  const groupSize = files.reduce((sum, f) => sum + (f.patch || '').length, 0);
+  console.log(`  🔍 Reviewing ${files.length} file(s) [${groupSize} chars]: ${fileNames}`);
+
   try {
-    console.log(`  🔍 Reviewing ${filename}...`);
     const responseText = await sendMessage(
       buildSystemPrompt(),
-      buildUserPrompt(filename, patch, prContext)
+      buildUserPrompt(files, prContext)
     );
 
     const comments = extractJSON(responseText);
 
     if (!Array.isArray(comments)) {
-      console.warn(`    ⚠️  Could not parse response for ${filename} — skipping`);
+      console.warn(`    ⚠️  Could not parse response for group [${fileNames}] — skipping`);
       return [];
     }
 
-    console.log(`    ✅ ${comments.length} comments for ${filename}`);
+    console.log(`    ✅ ${comments.length} comments`);
     return comments;
   } catch (err) {
-    console.error(`    ❌ Error reviewing ${filename}:`, err.message);
+    console.error(`    ❌ Error reviewing group [${fileNames}]:`, err.message);
     return [];
   }
 }
 
 async function reviewPR(files, prContext) {
+  // Filter to reviewable files only
+  const reviewable = files.filter(
+    f => f.status !== 'removed' && f.patch && shouldReviewFile(f.filename)
+  );
+  const skipped = files.length - reviewable.length;
+
+  const groups = groupFiles(reviewable);
+
   console.log(`\n🤖 Starting AI review [${AI_PROVIDER}/${AI_MODEL}] for PR #${prContext.prNumber} in ${prContext.repo}`);
-  console.log(`   Files to review: ${files.length}\n`);
+  console.log(`   ${reviewable.length} files → ${groups.length} group(s)${skipped ? ` (${skipped} skipped)` : ''}\n`);
 
   const allComments = [];
-  let filesReviewed = 0;
 
-  for (const file of files) {
-    if (file.status === 'removed') continue;
-
-    const comments = await reviewFile(file.filename, file.patch, prContext);
-
-    if (comments === null) continue; // skipped file type — don't count it
+  for (const group of groups) {
+    const comments = await reviewGroup(group, prContext);
     allComments.push(...comments);
-    filesReviewed++;
-
-    await new Promise((r) => setTimeout(r, 500));
+    if (groups.length > 1) await new Promise((r) => setTimeout(r, 500));
   }
 
   const critical    = allComments.filter((c) => c.severity === 'critical').length;
@@ -202,12 +220,12 @@ async function reviewPR(files, prContext) {
   const suggestions = allComments.filter((c) => c.severity === 'suggestion').length;
 
   console.log(`\n📊 Review complete:`);
-  console.log(`   Files reviewed: ${filesReviewed}`);
+  console.log(`   Files reviewed: ${reviewable.length}`);
   console.log(`   🔴 Critical: ${critical}`);
   console.log(`   🟡 Warnings: ${warnings}`);
   console.log(`   💡 Suggestions: ${suggestions}\n`);
 
-  return { comments: allComments, filesReviewed, critical, warnings, suggestions };
+  return { comments: allComments, filesReviewed: reviewable.length, critical, warnings, suggestions };
 }
 
 module.exports = { reviewPR };
