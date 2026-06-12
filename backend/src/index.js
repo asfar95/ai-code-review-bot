@@ -9,9 +9,9 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
-// Raw body needed for GitHub webhook signature verification
-app.use('/webhook', express.raw({ type: 'application/json' }));
-app.use(express.json());
+// express.json() must NOT apply to /webhook — the route reads raw bytes manually
+// for HMAC signature verification. Applying it globally would consume the stream.
+app.use('/api', express.json());
 app.use(cors({ origin: 'http://localhost:3000' }));
 
 // Routes

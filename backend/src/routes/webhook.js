@@ -8,8 +8,15 @@ router.post('/', async (req, res) => {
   const signature = req.headers['x-hub-signature-256'];
   const event = req.headers['x-github-event'];
 
+  // Read raw body manually — express.raw() breaks behind proxies that send
+  // chunked transfer-encoding or application/x-www-form-urlencoded content-type.
+  const chunks = [];
+  req.on('data', chunk => chunks.push(chunk));
+  await new Promise(resolve => req.on('end', resolve));
+  const rawBody = Buffer.concat(chunks);
+
   // Verify signature
-  if (!verifyWebhookSignature(req.body, signature)) {
+  if (!verifyWebhookSignature(rawBody, signature)) {
     console.warn('❌ Invalid webhook signature');
     return res.status(401).json({ error: 'Invalid signature' });
   }
@@ -21,7 +28,9 @@ router.post('/', async (req, res) => {
 
   let payload;
   try {
-    payload = JSON.parse(req.body.toString());
+    let bodyStr = rawBody.toString();
+    if (bodyStr.startsWith('payload=')) bodyStr = decodeURIComponent(bodyStr.slice(8));
+    payload = JSON.parse(bodyStr);
   } catch (err) {
     return res.status(400).json({ error: 'Invalid JSON payload' });
   }
@@ -97,7 +106,7 @@ router.post('/', async (req, res) => {
     // Post review back to GitHub
     const reviewBody = buildReviewSummary(comments, filesReviewed);
     if (commitSha) {
-      await submitPRReview(owner, repo, prNumber, commitSha, reviewBody, comments);
+      await submitPRReview(owner, repo, prNumber, commitSha, reviewBody, comments, files);
     }
   } catch (err) {
     console.error('❌ Error during review pipeline:', err);

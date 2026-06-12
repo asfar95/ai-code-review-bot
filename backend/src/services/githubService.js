@@ -69,33 +69,74 @@ async function postReviewComment(owner, repo, pullNumber, commitId, path, line, 
 /**
  * Post a general PR review summary (not inline)
  */
-async function submitPRReview(owner, repo, pullNumber, commitId, reviewBody, comments) {
-  try {
-    // Build inline comments array for the review
-    const reviewComments = comments
-      .filter((c) => c.line_number && c.line_number > 0)
-      .slice(0, 20) // GitHub limits inline comments per review
-      .map((c) => ({
-        path: c.file_path,
-        line: c.line_number,
-        body: formatComment(c),
-      }));
+/**
+ * Parse the lines on the RIGHT side (new file) that appear in a diff patch.
+ * GitHub only allows inline comments on lines present in the diff.
+ */
+function parseValidLines(patch) {
+  const valid = new Set();
+  if (!patch) return valid;
+  let newLine = 0;
+  for (const line of patch.split('\n')) {
+    const hunk = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+    if (hunk) {
+      newLine = parseInt(hunk[1], 10) - 1; // will be incremented on first real line
+      continue;
+    }
+    if (line.startsWith('-')) continue; // old side only — don't increment newLine
+    newLine++;
+    if (line.startsWith('+') || line.startsWith(' ')) valid.add(newLine);
+  }
+  return valid;
+}
 
+async function submitPRReview(owner, repo, pullNumber, commitId, reviewBody, comments, files = []) {
+  // Build a map of filename → valid line numbers from the actual diff
+  const validLineMap = {};
+  for (const f of files) {
+    validLineMap[f.filename] = parseValidLines(f.patch);
+  }
+
+  const inline = [];
+  const overflow = [];
+
+  for (const c of comments) {
+    if (!c.line_number || c.line_number <= 0) { overflow.push(c); continue; }
+    const validLines = validLineMap[c.file_path];
+    if (validLines && validLines.has(c.line_number)) {
+      inline.push(c);
+    } else {
+      overflow.push(c);
+    }
+  }
+
+  // Append out-of-diff comments to the review body so nothing is lost
+  let fullBody = reviewBody;
+  if (overflow.length > 0) {
+    fullBody += '\n\n---\n**Additional notes (outside diff):**\n';
+    for (const c of overflow) {
+      fullBody += `\n- **${c.file_path}** (line ${c.line_number ?? 'N/A'}): ${formatComment(c)}`;
+    }
+  }
+
+  try {
     await octokit.pulls.createReview({
       owner,
       repo,
       pull_number: pullNumber,
       commit_id: commitId,
-      body: reviewBody,
-      event: 'COMMENT', // APPROVE / REQUEST_CHANGES / COMMENT
-      comments: reviewComments,
+      body: fullBody,
+      event: 'COMMENT',
+      comments: inline.slice(0, 20).map((c) => ({
+        path: c.file_path,
+        line: c.line_number,
+        body: formatComment(c),
+      })),
     });
-
-    console.log(`✅ Posted review on PR #${pullNumber}`);
+    console.log(`✅ Posted review on PR #${pullNumber} (${inline.length} inline, ${overflow.length} in body)`);
   } catch (err) {
     console.error('Error submitting PR review:', err.message);
-    // Fallback: post as a plain issue comment
-    await postIssueComment(owner, repo, pullNumber, reviewBody);
+    await postIssueComment(owner, repo, pullNumber, fullBody);
   }
 }
 
@@ -162,18 +203,10 @@ function buildReviewSummary(comments, filesReviewed) {
   summary += `| 🟡 Warnings | ${warnings} |\n`;
   summary += `| 💡 Suggestions | ${suggestions} |\n\n`;
 
-  if (critical > 0) {
-    summary += `### 🔴 Critical Issues\n`;
-    comments
-      .filter((c) => c.severity === 'critical')
-      .forEach((c) => {
-        summary += `- **${c.file_path}** (line ${c.line_number || 'N/A'}): ${c.comment}\n`;
-      });
-    summary += '\n';
-  }
-
   if (comments.length === 0) {
     summary += `✅ **No issues found.** Looks good to merge!\n`;
+  } else {
+    summary += `> Inline comments are posted directly on the relevant lines below.\n`;
   }
 
   summary += `\n---\n*Powered by [AI Code Review Bot](https://github.com/asfar95/ai-code-review-bot)*`;

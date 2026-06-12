@@ -167,6 +167,22 @@ function groupFiles(files) {
   return groups;
 }
 
+// Returns the set of right-side (new file) line numbers that are actual additions (+).
+// Used to filter AI comments that reference lines not in the diff.
+function parseAddedLines(patch) {
+  const added = new Set();
+  if (!patch) return added;
+  let newLine = 0;
+  for (const line of patch.split('\n')) {
+    const hunk = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+    if (hunk) { newLine = parseInt(hunk[1], 10) - 1; continue; }
+    if (line.startsWith('-')) continue;
+    newLine++;
+    if (line.startsWith('+')) added.add(newLine);
+  }
+  return added;
+}
+
 // ── Core review logic ──────────────────────────────────────────────────────────
 async function reviewGroup(files, prContext) {
   const fileNames = files.map(f => f.filename).join(', ');
@@ -206,6 +222,12 @@ async function reviewPR(files, prContext) {
   console.log(`\n🤖 Starting AI review [${AI_PROVIDER}/${AI_MODEL}] for PR #${prContext.prNumber} in ${prContext.repo}`);
   console.log(`   ${reviewable.length} files → ${groups.length} group(s)${skipped ? ` (${skipped} skipped)` : ''}\n`);
 
+  // Build a map of filename → Set of added line numbers for post-review filtering
+  const addedLineMap = {};
+  for (const f of reviewable) {
+    addedLineMap[f.filename] = parseAddedLines(f.patch);
+  }
+
   const allComments = [];
 
   for (const group of groups) {
@@ -214,17 +236,27 @@ async function reviewPR(files, prContext) {
     if (groups.length > 1) await new Promise((r) => setTimeout(r, 500));
   }
 
-  const critical    = allComments.filter((c) => c.severity === 'critical').length;
-  const warnings    = allComments.filter((c) => c.severity === 'warning').length;
-  const suggestions = allComments.filter((c) => c.severity === 'suggestion').length;
+  // Filter out comments on lines that don't exist in the actual diff additions.
+  // This stops the AI from commenting on deleted (-) lines or unchanged context.
+  const filtered = allComments.filter(c => {
+    if (!c.line_number) return true; // keep null-line comments (general file issues)
+    const added = addedLineMap[c.file_path];
+    return !added || added.size === 0 || added.has(c.line_number);
+  });
+
+  const critical    = filtered.filter((c) => c.severity === 'critical').length;
+  const warnings    = filtered.filter((c) => c.severity === 'warning').length;
+  const suggestions = filtered.filter((c) => c.severity === 'suggestion').length;
 
   console.log(`\n📊 Review complete:`);
   console.log(`   Files reviewed: ${reviewable.length}`);
   console.log(`   🔴 Critical: ${critical}`);
   console.log(`   🟡 Warnings: ${warnings}`);
-  console.log(`   💡 Suggestions: ${suggestions}\n`);
+  console.log(`   💡 Suggestions: ${suggestions}`);
+  if (allComments.length !== filtered.length)
+    console.log(`   ⚠️  Filtered ${allComments.length - filtered.length} comments on non-added lines\n`);
 
-  return { comments: allComments, filesReviewed: reviewable.length, critical, warnings, suggestions };
+  return { comments: filtered, filesReviewed: reviewable.length, critical, warnings, suggestions };
 }
 
 module.exports = { reviewPR };
