@@ -81,7 +81,7 @@ function buildUserPrompt(files, prContext) {
     : '';
 
   const fileBlocks = files
-    .map(f => `### ${f.filename}\n\`\`\`diff\n${truncateDiff(f.patch)}\n\`\`\``)
+    .map(f => `### ${f.filename}\n\`\`\`diff\n${annotatePatch(f.patch)}\n\`\`\``)
     .join('\n\n');
 
   const fileList = files.map(f => `"${f.filename}"`).join(', ');
@@ -94,11 +94,14 @@ You are reviewing ${files.length} file${files.length > 1 ? 's' : ''} changed in 
 
 ${fileBlocks}
 
-Review ALL changed lines (starting with +) across the files above and return a single JSON array of issues.
+IMPORTANT: Added lines are annotated as +[LN] where N is the exact line number in the new file.
+For example: +[L27]  var fee = Math.round(...) means this line is at line 27.
+
+Review ALL added lines (marked +[LN]) and return a single JSON array of issues.
 Each item must have exactly these fields:
 {
   "file_path": <one of: ${fileList}>,
-  "line_number": <integer from the diff, or null>,
+  "line_number": <the integer N from the +[LN] annotation of the line you are commenting on — NEVER null>,
   "severity": <"critical" | "warning" | "suggestion">,
   "category": <"security" | "performance" | "bug" | "style" | "maintainability" | "best-practice">,
   "comment": <actionable explanation of the issue and how to fix it, max 300 chars>
@@ -111,7 +114,8 @@ Severity guide:
 
 Rules:
 - Max 8 comments per file, 20 total
-- Only flag CHANGED lines (starting with + in the diff)
+- Only flag ADDED lines (annotated with +[LN])
+- line_number MUST be the N from the +[LN] annotation — do not guess or omit it
 - You may reference other files in the group when an issue spans multiple files
 - Skip trivial whitespace or formatting changes
 - Return [] if no real issues found`;
@@ -127,6 +131,34 @@ function truncateDiff(diff, maxChars = MAX_DIFF_CHARS) {
   if (!diff) return '';
   if (diff.length <= maxChars) return diff;
   return diff.substring(0, maxChars) + '\n... [diff truncated for length]';
+}
+
+// Annotate each added line (+) with its actual line number in the new file.
+// Models struggle to calculate line numbers from raw hunk headers; explicit
+// labels eliminate guessing and make null line_numbers much less likely.
+// Format: "+[L27] var fee = ..." — model should return 27 as line_number.
+function annotatePatch(patch, maxChars = MAX_DIFF_CHARS) {
+  if (!patch) return '';
+  const lines = [];
+  let newLine = 0;
+  for (const line of patch.split('\n')) {
+    const hunk = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+    if (hunk) {
+      newLine = parseInt(hunk[1], 10) - 1;
+      lines.push(line);
+      continue;
+    }
+    if (line.startsWith('-')) { lines.push(line); continue; }
+    newLine++;
+    if (line.startsWith('+')) {
+      lines.push(`+[L${newLine}]${line.slice(1)}`);
+    } else {
+      lines.push(line);
+    }
+  }
+  const result = lines.join('\n');
+  if (result.length <= maxChars) return result;
+  return result.substring(0, maxChars) + '\n... [diff truncated for length]';
 }
 
 function extractJSON(text) {
