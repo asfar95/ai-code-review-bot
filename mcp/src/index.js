@@ -26,7 +26,7 @@ server.tool(
   'Review a GitHub pull request. Returns severity-ranked inline comments across all changed files.',
   {
     owner:     z.string().describe('GitHub repository owner (e.g. "asfar95")'),
-    repo:      z.string().describe('GitHub repository name (e.g. "sample-app")'),
+    repo:      z.string().describe('GitHub repository name (e.g. "ai-agent-playground")'),
     pr_number: z.number().describe('Pull request number'),
   },
   async ({ owner, repo, pr_number }) => {
@@ -82,7 +82,7 @@ server.tool(
   'get_review_history',
   'Fetch past PR reviews stored in the local database. Optionally filter by repo.',
   {
-    repo:  z.string().optional().describe('Filter by repo full name (e.g. "asfar95/sample-app")'),
+    repo:  z.string().optional().describe('Filter by repo full name (e.g. "asfar95/ai-agent-playground")'),
     limit: z.number().optional().describe('Max results to return (default 10)'),
   },
   async ({ repo, limit = 10 }) => {
