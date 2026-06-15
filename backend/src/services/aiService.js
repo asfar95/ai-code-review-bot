@@ -116,6 +116,7 @@ Rules:
 - Max 8 comments per file, 20 total
 - Only flag ADDED lines (annotated with +[LN])
 - line_number MUST be the N from the +[LN] annotation — do not guess or omit it
+- Comment on the specific change on that line — do not use it as an anchor to suggest improvements to unchanged surrounding code or unrelated patterns
 - You may reference other files in the group when an issue spans multiple files
 - Skip trivial whitespace or formatting changes
 - Return [] if no real issues found`;
