@@ -9,15 +9,8 @@ const octokit = new Octokit({
  * Verify GitHub webhook signature
  */
 function verifyWebhookSignature(payload, signature) {
-  const secret = process.env.GITHUB_WEBHOOK_SECRET;
-  if (!secret) {
-    console.warn('⚠️  No GITHUB_WEBHOOK_SECRET set — skipping signature verification');
-    return true;
-  }
   if (!signature) return false;
-
-  const hmac = crypto.createHmac('sha256', secret);
-  const digest = 'sha256=' + hmac.update(payload).digest('hex');
+  const digest = 'sha256=' + crypto.createHmac('sha256', process.env.GITHUB_WEBHOOK_SECRET).update(payload).digest('hex');
   return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(signature));
 }
 

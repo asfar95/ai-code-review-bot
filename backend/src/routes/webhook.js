@@ -42,14 +42,19 @@ router.post('/', async (req, res) => {
     return res.status(200).json({ message: `Ignored action: ${action}` });
   }
 
-  const owner = repository.owner.login;
-  const repo = repository.name;
-  const repoFullName = repository.full_name;
-  const prNumber = pull_request.number;
-  const prTitle = pull_request.title;
+  const owner = repository?.owner?.login;
+  const repo = repository?.name;
+  const repoFullName = repository?.full_name;
+  const prNumber = pull_request?.number;
+  const prTitle = pull_request?.title;
+  const prAuthor = pull_request?.user?.login;
+  const prUrl = pull_request?.html_url;
+
+  if (!owner || !repo || !prNumber || !prTitle || !prAuthor) {
+    return res.status(400).json({ error: 'Malformed webhook: missing PR or repository fields' });
+  }
+
   const prDescription = pull_request.body || '';
-  const prAuthor = pull_request.user.login;
-  const prUrl = pull_request.html_url;
 
   console.log(`\n📬 Received PR event: ${action} #${prNumber} "${prTitle}" by @${prAuthor}`);
 
@@ -109,7 +114,17 @@ router.post('/', async (req, res) => {
       await submitPRReview(owner, repo, prNumber, commitSha, reviewBody, comments, files);
     }
   } catch (err) {
-    console.error('❌ Error during review pipeline:', err);
+    console.error(`❌ Review pipeline error on ${repoFullName}#${prNumber}: ${err.message}`);
+    if (typeof prId !== 'undefined') {
+      updatePullRequest(prId, {
+        status: 'failed',
+        files_reviewed: 0,
+        total_comments: 0,
+        critical_count: 0,
+        warning_count: 0,
+        suggestion_count: 0,
+      });
+    }
   }
 });
 

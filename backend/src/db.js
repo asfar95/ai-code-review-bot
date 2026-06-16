@@ -22,6 +22,13 @@ function getDb() {
 function initDb() {
   const database = getDb();
 
+  try {
+    database.prepare('SELECT 1').get();
+  } catch (err) {
+    console.error(`❌ Fatal: Database connection failed — ${err.message}`);
+    process.exit(1);
+  }
+
   database.exec(`
     CREATE TABLE IF NOT EXISTS pull_requests (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

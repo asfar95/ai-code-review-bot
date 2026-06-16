@@ -19,8 +19,8 @@ const PROVIDERS = {
   ollama:     { baseURL: 'http://localhost:11434/v1',                                   model: 'llama3.2' },
 };
 
-const AI_PROVIDER = process.env.AI_PROVIDER || 'groq';
-const _provider = PROVIDERS[AI_PROVIDER] || PROVIDERS.groq;
+const AI_PROVIDER = process.env.AI_PROVIDER || 'anthropic';
+const _provider = PROVIDERS[AI_PROVIDER] || PROVIDERS.anthropic;
 const AI_BASE_URL = process.env.AI_BASE_URL || _provider.baseURL;
 const AI_MODEL = process.env.AI_MODEL || _provider.model;
 const AI_API_KEY = process.env.AI_API_KEY || process.env.ANTHROPIC_API_KEY;
